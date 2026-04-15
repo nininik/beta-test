@@ -2029,33 +2029,54 @@ function bindSubCardEvents(pool, data) {
       </div>`;
   }
 
-  try {
+try {
     // 1. Firebase 초기화 확인
     diagMsg('Firebase 초기화 확인 중...');
     if (typeof firebase === 'undefined' || !firebase.apps.length) {
-      diagErr('Firebase 초기화 실패', 'firebase 객체를 찾을 수 없습니다.');
-      return;
+        diagErr('Firebase 초기화 실패', 'firebase 객체를 찾을 수 없습니다.');
+        return;
     }
 
     // 2. Firestore 연결 확인
     diagMsg('Firestore 연결 중...');
     if (typeof db === 'undefined') {
-      diagErr('Firestore 연결 실패', 'db 객체가 초기화되지 않았습니다.');
-      return;
+        diagErr('Firestore 연결 실패', 'db 객체가 초기화되지 않았습니다.');
+        return;
     }
 
-    // 3. 컬렉션 읽기
-    diagMsg('public_data 컬렉션 불러오는 중...');
-    const snap = await db.collection('public_data').get();
+    // 3. 컬렉션 실시간 연결 (get 대신 onSnapshot 사용)
+    diagMsg('public_data 컬렉션 실시간 연결 중...');
 
-    // 4. 문서 수 확인
-    console.log('[SwimMap] 문서 수:', snap.size);
-    if (snap.empty) {
-      diagErr('데이터 없음', 'public_data 컬렉션에 문서가 없습니다. 컬렉션명을 확인해주세요.');
-      return;
-    }
+    // ★ await를 제거하고 onSnapshot을 사용합니다.
+    db.collection('public_data').onSnapshot((snap) => {
+        
+        // 4. 문서 수 확인 (실시간 데이터가 올 때마다 실행됨)
+        console.log('[SwimMap] 현재 문서 수:', snap.size);
+        
+        if (snap.empty) {
+            diagErr('데이터 없음', 'public_data 컬렉션에 문서가 없습니다.');
+            return;
+        }
 
-    diagMsg(`${snap.size}개 수영장 처리 중...`);
+        diagMsg(`${snap.size}개 수영장 정보 업데이트됨`);
+
+        // 5. 실제 데이터 처리 로직
+        snap.forEach((doc) => {
+            const data = doc.data();
+            console.log('수영장 데이터:', data);
+            
+            // 여기에 화면의 텍스트를 바꾸거나 지도를 업데이트하는 코드를 넣으세요!
+            // 예: updateMap(data); 
+        });
+
+    }, (error) => {
+        // 연결 오류 시 처리
+        diagErr('Firestore 연결 오류', error.message);
+    });
+
+} catch (e) {
+    diagErr('시스템 오류', e.message);
+}
 
     allPools = snap.docs.map((doc, i) => {
       const d = doc.data();
