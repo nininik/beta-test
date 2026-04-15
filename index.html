@@ -68,10 +68,10 @@ html, body { height: 100%; overflow: hidden; font-family: 'Noto Sans KR', sans-s
 .nav-btn.primary { background: rgba(255,255,255,0.22); font-weight: 700; border-color: rgba(255,255,255,0.4); }
 
 /* ── Main overlay ── */
-.main { position: relative; z-index: 10; flex: 1; min-height: 0; height: calc(100vh - var(--nav-h)); pointer-events: none; }
+.main { position: relative; z-index: 10; flex: 1; pointer-events: none; }
 
 /* ── Naver Map ── */
-#map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: all; background: #e8edf2; }
+#map { position: absolute; inset: 0; z-index: 0; pointer-events: all; background: #e8edf2; }
 
 /* ── Sidebar (floating glass) ── */
 .sidebar {
@@ -1351,7 +1351,7 @@ function buildSubCardHTML(pool, data, liked, cnt, isIn) {
         <div class="info-cell">
           <div class="info-cell-label">💧 수질</div>
           <input class="info-cell-input" id="sc-quality-${idx}" placeholder="예) 염소 처리"
-            value="${esc(data.quality)}" oninput="autoSavePoolData(${idx})" readonly>
+            value="${esc(data.quality)}" oninput="autoSavePoolData(${idx})">
         </div>
 
         <div class="info-cell">
@@ -2029,54 +2029,33 @@ function bindSubCardEvents(pool, data) {
       </div>`;
   }
 
-try {
+  try {
     // 1. Firebase 초기화 확인
     diagMsg('Firebase 초기화 확인 중...');
     if (typeof firebase === 'undefined' || !firebase.apps.length) {
-        diagErr('Firebase 초기화 실패', 'firebase 객체를 찾을 수 없습니다.');
-        return;
+      diagErr('Firebase 초기화 실패', 'firebase 객체를 찾을 수 없습니다.');
+      return;
     }
 
     // 2. Firestore 연결 확인
     diagMsg('Firestore 연결 중...');
     if (typeof db === 'undefined') {
-        diagErr('Firestore 연결 실패', 'db 객체가 초기화되지 않았습니다.');
-        return;
+      diagErr('Firestore 연결 실패', 'db 객체가 초기화되지 않았습니다.');
+      return;
     }
 
-    // 3. 컬렉션 실시간 연결 (get 대신 onSnapshot 사용)
-    diagMsg('public_data 컬렉션 실시간 연결 중...');
+    // 3. 컬렉션 읽기
+    diagMsg('public_data 컬렉션 불러오는 중...');
+    const snap = await db.collection('public_data').get();
 
-    // ★ await를 제거하고 onSnapshot을 사용합니다.
-    db.collection('public_data').onSnapshot((snap) => {
-        
-        // 4. 문서 수 확인 (실시간 데이터가 올 때마다 실행됨)
-        console.log('[SwimMap] 현재 문서 수:', snap.size);
-        
-        if (snap.empty) {
-            diagErr('데이터 없음', 'public_data 컬렉션에 문서가 없습니다.');
-            return;
-        }
+    // 4. 문서 수 확인
+    console.log('[SwimMap] 문서 수:', snap.size);
+    if (snap.empty) {
+      diagErr('데이터 없음', 'public_data 컬렉션에 문서가 없습니다. 컬렉션명을 확인해주세요.');
+      return;
+    }
 
-        diagMsg(`${snap.size}개 수영장 정보 업데이트됨`);
-
-        // 5. 실제 데이터 처리 로직
-        snap.forEach((doc) => {
-            const data = doc.data();
-            console.log('수영장 데이터:', data);
-            
-            // 여기에 화면의 텍스트를 바꾸거나 지도를 업데이트하는 코드를 넣으세요!
-            // 예: updateMap(data); 
-        });
-
-    }, (error) => {
-        // 연결 오류 시 처리
-        diagErr('Firestore 연결 오류', error.message);
-    });
-
-} catch (e) {
-    diagErr('시스템 오류', e.message);
-}
+    diagMsg(`${snap.size}개 수영장 처리 중...`);
 
     allPools = snap.docs.map((doc, i) => {
       const d = doc.data();
@@ -2224,80 +2203,97 @@ function renderList(pools) {
 
 /* ─── Naver Map ──────────────────────────────── */
 let naverMap = null;
-const naverMarkers = {};
-const naverInfoWindows = {};
+const naverMarkers = {};    // idx → naver.maps.Marker
+const naverInfoWindows = {}; // idx → naver.maps.InfoWindow
 let currentMapIdx = null;
-let _mapInitDone = false;
-let _poolsReady  = false;
 
-window.navermap_authFailure = function() {
-  document.getElementById('map').innerHTML =
-    '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#c00;font-size:14px;"><strong>⚠️ 네이버 지도 API 인증 실패</strong><p>ncpKeyId를 확인해주세요.</p></div>';
-};
+function initNaverMap() {
+  /* 네이버 지도 API 로드 대기 */
+  if (typeof naver === 'undefined' || typeof naver.maps === 'undefined') {
+    setTimeout(initNaverMap, 300);
+    return;
+  }
 
-function _buildMarkers() {
-  allPools.forEach(p => {
-    if (!p._lat || !p._lng || naverMarkers[p._idx]) return;
-    const isIn = p._type.includes('실내');
-    const marker = new naver.maps.Marker({
-      position: new naver.maps.LatLng(p._lat, p._lng),
-      map: naverMap,
-      title: p._name,
-      icon: {
-        content: `<div style="background:${isIn?'#2563eb':'#f97316'};color:#fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:2px solid #fff;cursor:pointer;">🏊</div>`,
-        size: new naver.maps.Size(32, 32),
-        anchor: new naver.maps.Point(16, 16)
-      }
-    });
-    const iw = new naver.maps.InfoWindow({
-      content: `<div style="padding:10px 13px;min-width:150px;font-family:'Noto Sans KR',sans-serif;font-size:13px;font-weight:700;color:#0f172a;">🏊 ${p._name}<div style="font-size:11px;font-weight:400;color:#64748b;margin-top:2px;">${p._sido} ${p._sigungu}</div></div>`,
-      maxWidth: 280, backgroundColor: '#fff', borderColor: '#e2e8f0',
-      borderWidth: 1, anchorSize: new naver.maps.Size(10,10),
-      anchorColor: '#fff', pixelOffset: new naver.maps.Point(10,-10)
-    });
-    naver.maps.Event.addListener(marker, 'click', () => {
-      const pool = allPools.find(x => x._idx === p._idx);
-      if (pool) { selectPool(pool); openSubCard(pool); }
-    });
-    naverMarkers[p._idx]     = marker;
-    naverInfoWindows[p._idx] = iw;
-  });
-}
-
-function _createMap() {
-  if (_mapInitDone) return;
-  _mapInitDone = true;
   naverMap = new naver.maps.Map('map', {
     center: new naver.maps.LatLng(36.5, 127.8),
     zoom: 7,
     zoomControl: true,
     zoomControlOptions: { position: naver.maps.Position.TOP_RIGHT }
   });
-  if (_poolsReady) _buildMarkers();
-}
 
-/* 데이터 로드 완료 후 호출 */
-function initNaverMap() {
-  _poolsReady = true;
-  if (_mapInitDone) _buildMarkers();
-}
+  /* 인증 실패 핸들러 */
+  window.navermap_authFailure = function() {
+    document.getElementById('map').innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#c00;font-size:14px;">'
+      + '<strong>⚠️ 네이버 지도 API 인증 실패</strong>'
+      + '<p>ncpKeyId를 확인해주세요.</p>'
+      + '</div>';
+  };
 
-/* Naver API 로드 완료 폴링 감지 */
-(function waitNaver() {
-  if (typeof naver !== 'undefined' && naver.maps && naver.maps.Map) {
-    _createMap();
-  } else {
-    setTimeout(waitNaver, 100);
-  }
-})();
+  /* 위·경도 있는 수영장만 마커 생성 */
+  allPools.forEach(p => {
+    if (!p._lat || !p._lng) return;
+
+    const isIn = p._type.includes('실내');
+    const markerIcon = {
+      content: `<div style="
+        background:${isIn ? '#2563eb' : '#f97316'};
+        color:#fff;border-radius:50%;
+        width:32px;height:32px;
+        display:flex;align-items:center;justify-content:center;
+        font-size:15px;
+        box-shadow:0 2px 8px rgba(0,0,0,0.3);
+        border:2px solid #fff;
+        cursor:pointer;
+      ">🏊</div>`,
+      size: new naver.maps.Size(32, 32),
+      anchor: new naver.maps.Point(16, 16)
+    };
+
+    const marker = new naver.maps.Marker({
+      position: new naver.maps.LatLng(p._lat, p._lng),
+      map: naverMap,
+      title: p._name,
+      icon: markerIcon
+    });
+
+    const iw = new naver.maps.InfoWindow({
+      content: `<div style="
+        padding:10px 13px;min-width:150px;
+        font-family:'Noto Sans KR',sans-serif;
+        font-size:13px;font-weight:700;color:#0f172a;
+        border-radius:8px;
+      ">🏊 ${p._name}<div style="font-size:11px;font-weight:400;color:#64748b;margin-top:2px;">${p._sido} ${p._sigungu}</div></div>`,
+      maxWidth: 280,
+      backgroundColor: '#fff',
+      borderColor: '#e2e8f0',
+      borderWidth: 1,
+      anchorSize: new naver.maps.Size(10, 10),
+      anchorColor: '#fff',
+      pixelOffset: new naver.maps.Point(10, -10)
+    });
+
+    naver.maps.Event.addListener(marker, 'click', () => {
+      const pool = allPools.find(x => x._idx === p._idx);
+      if (pool) { selectPool(pool); openSubCard(pool); }
+    });
+
+    naverMarkers[p._idx] = marker;
+    naverInfoWindows[p._idx] = iw;
+  });
+}
 
 function focusMapPool(pool) {
   if (!naverMap || !pool._lat || !pool._lng) return;
+
+  /* 이전 InfoWindow 닫기 */
   if (currentMapIdx !== null && naverInfoWindows[currentMapIdx]) {
     naverInfoWindows[currentMapIdx].close();
   }
+
   naverMap.setCenter(new naver.maps.LatLng(pool._lat, pool._lng));
   naverMap.setZoom(16);
+
   if (naverInfoWindows[pool._idx] && naverMarkers[pool._idx]) {
     naverInfoWindows[pool._idx].open(naverMap, naverMarkers[pool._idx]);
   }
