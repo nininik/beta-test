@@ -1351,7 +1351,7 @@ function buildSubCardHTML(pool, data, liked, cnt, isIn) {
         <div class="info-cell">
           <div class="info-cell-label">💧 수질</div>
           <input class="info-cell-input" id="sc-quality-${idx}" placeholder="예) 염소 처리"
-            value="${esc(data.quality)}" oninput="autoSavePoolData(${idx})">
+            value="${esc(data.quality)}" oninput="autoSavePoolData(${idx})" readonly>
         </div>
 
         <div class="info-cell">
