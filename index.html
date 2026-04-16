@@ -1351,7 +1351,7 @@ function buildSubCardHTML(pool, data, liked, cnt, isIn) {
         <div class="info-cell">
           <div class="info-cell-label">💧 수질</div>
           <input class="info-cell-input" id="sc-quality-${idx}" placeholder="예) 염소 처리"
-            value="${esc(data.quality)}" oninput="autoSavePoolData(${idx})" readonly>
+            value="${esc(data.quality)}" oninput="autoSavePoolData(${idx})">
         </div>
 
         <div class="info-cell">
@@ -2356,7 +2356,7 @@ function submitReport() {
     createdAt:    firebase.firestore.FieldValue.serverTimestamp()
   };
 
-  db.collection('pool_reports').add(data)
+  db.collection('new_pools_requests').add(data)
     .then(() => {
       btn.textContent = '✓ 제보가 접수되었습니다!';
       btn.style.background = '#0F6E56';
@@ -2381,3 +2381,4 @@ function submitReport() {
 </script>
 </body>
 </html>
+
