@@ -1116,7 +1116,7 @@ async function loadComments(pool) {
       .sort((a, b) => {
         const ta = a.createdAt?.toMillis?.() ?? 0;
         const tb = b.createdAt?.toMillis?.() ?? 0;
-        return ta - tb;
+        return tb - ta;
       });
 
     commentCache[docId] = comments;
