@@ -148,6 +148,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Noto Sans KR', sans-s
 .tab-btn:hover { color: var(--gray-700); background: rgba(255,255,255,0.3); }
 .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); background: rgba(255,255,255,0.4); }
 .tab-btn.ranking-tab.active { color: var(--red); border-bottom-color: var(--red); }
+.tab-btn.nearby-tab.active  { color: #059669; border-bottom-color: #059669; }
 .tab-badge {
   background: var(--red); color: white; border-radius: 100px;
   padding: 1px 6px; font-size: 0.63rem; font-weight: 700; min-width: 18px; text-align: center;
@@ -865,6 +866,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Noto Sans KR', sans-s
 
       <div class="tab-row">
         <button class="tab-btn active" id="tabList" onclick="switchTab('list')">🏊 목록</button>
+        <button class="tab-btn nearby-tab" id="tabNearby" onclick="switchTab('nearby')">📍 현재위치목록</button>
         <button class="tab-btn ranking-tab" id="tabRank" onclick="switchTab('rank')">
           ❤️ 좋아요 랭킹
           <span class="tab-badge" id="likedBadge" style="display:none">0</span>
@@ -882,6 +884,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Noto Sans KR', sans-s
       </div>
 
       <div class="ranking-panel" id="rankingPanel"></div>
+      <div class="ranking-panel" id="nearbyPanel"></div>
     </aside>
 
     <!-- ── Pool Sub-Card ── -->
@@ -1158,10 +1161,66 @@ function switchTab(tab) {
   currentTab = tab;
   document.getElementById('tabList').classList.toggle('active', tab === 'list');
   document.getElementById('tabRank').classList.toggle('active', tab === 'rank');
-  document.getElementById('poolList').style.display     = tab === 'list' ? 'block' : 'none';
-  document.getElementById('rankingPanel').style.display = tab === 'rank' ? 'block' : 'none';
-  document.getElementById('statsRow').style.display     = tab === 'list' ? 'flex'  : 'none';
-  if (tab === 'rank') renderRanking();
+  document.getElementById('tabNearby').classList.toggle('active', tab === 'nearby');
+  document.getElementById('poolList').style.display      = tab === 'list'   ? 'block' : 'none';
+  document.getElementById('rankingPanel').style.display  = tab === 'rank'   ? 'block' : 'none';
+  document.getElementById('nearbyPanel').style.display   = tab === 'nearby' ? 'block' : 'none';
+  document.getElementById('statsRow').style.display      = tab === 'list'   ? 'flex'  : 'none';
+  if (tab === 'rank')   renderRanking();
+  if (tab === 'nearby') renderNearby();
+}
+
+function renderNearby() {
+  const panel = document.getElementById('nearbyPanel');
+  panel.innerHTML = '<div class="rank-empty"><div class="ei">📍</div><h3>위치 정보 가져오는 중...</h3><p>잠시만 기다려주세요.</p></div>';
+
+  if (!navigator.geolocation) {
+    panel.innerHTML = '<div class="rank-empty"><div class="ei">😢</div><h3>위치 서비스 미지원</h3><p>이 브라우저는 위치 서비스를 지원하지 않습니다.</p></div>';
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(pos => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+
+    const poolsWithDist = allPools
+      .filter(p => p._lat && p._lng)
+      .map(p => {
+        const dLat = (p._lat - lat) * Math.PI / 180;
+        const dLng = (p._lng - lng) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180) * Math.cos(p._lat*Math.PI/180) * Math.sin(dLng/2)**2;
+        const dist = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return { ...p, _dist: dist };
+      })
+      .sort((a, b) => a._dist - b._dist)
+      .slice(0, 30);
+
+    if (!poolsWithDist.length) {
+      panel.innerHTML = '<div class="rank-empty"><div class="ei">🏊</div><h3>근처 수영장 없음</h3><p>좌표 정보가 있는 수영장이 없습니다.</p></div>';
+      return;
+    }
+
+    panel.innerHTML = '';
+    poolsWithDist.forEach((p, i) => {
+      const distStr = p._dist < 1
+        ? `${Math.round(p._dist * 1000)}m`
+        : `${p._dist.toFixed(1)}km`;
+      const row = document.createElement('div');
+      row.className = 'rank-row';
+      row.innerHTML = `
+        <div class="rank-num" style="color:#059669;font-size:0.72rem;">${distStr}</div>
+        <div class="rank-info">
+          <div class="rank-name">${p._name}</div>
+          <div class="rank-loc">${p._sido} ${p._sigungu}</div>
+        </div>
+        <div style="font-size:0.75rem;color:#94a3b8;">${p._type.includes('실내') ? '🏠실내' : '☀️실외'}</div>
+      `;
+      row.addEventListener('click', () => { switchTab('list'); setTimeout(() => { selectPool(p); openSubCard(p); focusMapPool(p); }, 80); });
+      panel.appendChild(row);
+    });
+  }, err => {
+    panel.innerHTML = '<div class="rank-empty"><div class="ei">🚫</div><h3>위치 접근 거부됨</h3><p>브라우저에서 위치 권한을 허용해 주세요.</p></div>';
+  });
 }
 
 /* ─── Likes ──────────────────────────────────── */
